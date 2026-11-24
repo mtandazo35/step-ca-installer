@@ -3,13 +3,15 @@
 # certificados a IPs privadas y nombres internos.
 #
 # Uso (como root, desde /root):
-#   bash install.sh
-#   CA_DNS="10.0.0.5,ca.lan" CA_DOMINIOS="*.lan" bash install.sh
+#   bash install.sh int.ejemplo.com      # CA en ca.int.ejemplo.com, firma *.int.ejemplo.com e IPs privadas
+#   bash install.sh                      # sin dominio: solo IPs privadas
+#   CA_DNS="10.0.0.5" CA_DOMINIOS="*.lan" bash install.sh int.ejemplo.com
 #
 # No sobrescribe una CA existente: si /etc/step-ca/config/ca.json ya existe, aborta.
 set -Eeuo pipefail
 
 # ---------------------------------------------------------------- variables
+CA_DOMINIO="${CA_DOMINIO:-${1:-}}"   # dominio interno (int.ejemplo.com): CA en ca.<dominio>, firma *.<dominio>
 CA_NOMBRE="${CA_NOMBRE:-CA interna}"
 CA_DNS="${CA_DNS:-}"            # IPs/nombres por los que se llega a la CA, separados por coma (defecto: IP principal)
 CA_PUERTO="${CA_PUERTO:-443}"
@@ -82,6 +84,15 @@ fi
 if [[ -z "$CA_DNS" ]]; then
   CA_DNS="$(ip_principal)"
   [[ -n "$CA_DNS" ]] || die "no se pudo detectar la IP principal; indicar CA_DNS=\"<ip>,<nombre>\""
+fi
+if [[ -n "$CA_DOMINIO" ]]; then
+  CA_DOMINIO="${CA_DOMINIO#\*.}"
+  CA_DOMINIO="${CA_DOMINIO%.}"
+  [[ "$CA_DOMINIO" == *.* ]] || die "dominio no válido: $CA_DOMINIO (ejemplo: int.ejemplo.com)"
+  # La IP va primero: la CA se comprueba a sí misma por IP, así no depende de
+  # que el registro DNS ya exista.
+  [[ ",$CA_DNS," == *",ca.$CA_DOMINIO,"* ]] || CA_DNS="$CA_DNS,ca.$CA_DOMINIO"
+  CA_DOMINIOS="${CA_DOMINIOS:+$CA_DOMINIOS,}*.$CA_DOMINIO"
 fi
 IFS=',' read -ra NOMBRES_CA <<<"$CA_DNS"
 dns_args=()
@@ -198,6 +209,14 @@ huella="$(step certificate fingerprint "$STEPPATH/certs/root_ca.crt")"
 url="https://${NOMBRES_CA[0]// /}"
 [[ "$CA_PUERTO" != 443 ]] && url="$url:$CA_PUERTO"
 
+aviso_dns=""
+if [[ -n "$CA_DOMINIO" ]]; then
+  aviso_dns=" 3. Crear en el DNS del dominio (Cloudflare, cPanel o DirectAdmin; en Cloudflare
+    con \"Solo DNS\", nube gris). Ver \"Dominio y registros DNS\" en el README:
+      ca.$CA_DOMINIO        A   ${ips[0]:-<IP privada de la CA>}
+      <equipo>.$CA_DOMINIO  A   <IP privada del equipo>"
+fi
+
 cat <<EOF
 
 =====================================================================
@@ -217,6 +236,7 @@ cat <<EOF
     (lleva la clave raíz y las contraseñas) y después quitar la raíz de aquí:
       shred -u $STEPPATH/secrets/root_ca_key
  2. Limitar el puerto $CA_PUERTO a las redes internas en el firewall.
+${aviso_dns}
 
  Cliente Linux (confiar en la CA):
    step ca bootstrap --ca-url $url --fingerprint $huella --install
