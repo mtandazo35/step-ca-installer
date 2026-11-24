@@ -14,6 +14,7 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export STEPPATH=/etc/step-ca
 TTY=/dev/tty
 CERTS=/root/certificados
+CONF=/root/step-ca-setup.conf   # guarda el dominio principal (zona) para el menú
 
 # ---------------------------------------------------------------- utilidades
 negrita() { printf '\033[1m%s\033[0m\n' "$*"; }
@@ -57,6 +58,7 @@ leer_ca() {
     "$STEPPATH/config/ca.json")"
   CA_PERMITIDO_IP="$(jq -r '.authority.policy.x509.allow.ip // [] | join(", ")' "$STEPPATH/config/ca.json")"
   CA_PERMITIDO_DNS="$(jq -r '.authority.policy.x509.allow.dns // [] | join(", ")' "$STEPPATH/config/ca.json")"
+  CA_ZONA="$(sed -n 's/^ZONA=//p' "$CONF" 2>/dev/null || true)"
 }
 
 # ---------------------------------------------------------------- comprobaciones
@@ -284,8 +286,10 @@ Hay dos formas de publicarlos:
 
 EOF
   [[ -n "$ip" ]] || ip="$(pregunta "IP privada de la CA" "$(ip_principal)")"
-  zona="$(zona_de "$CA_DOMINIO" || true)"
-  [[ -n "$zona" ]] || zona="$(pregunta "Dominio principal (la zona del panel)" "${CA_DOMINIO#*.}")"
+  # El dominio lo dio el usuario en la instalación; solo si falta se deduce por NS.
+  zona="${CA_ZONA:-}"
+  [[ -n "$zona" ]] || zona="$(zona_de "$CA_DOMINIO" || true)"
+  [[ -n "$zona" ]] || zona="$(pregunta "Su dominio (el que administra en el panel)" "${CA_DOMINIO#*.}")"
   rel="${fqdn%."$zona"}"
   ns="$(dig +short +time=3 +tries=1 NS "$zona" @1.1.1.1 2>/dev/null | tr '\n' ' ' || true)"
 
@@ -508,22 +512,40 @@ EOF
 Es la IP por la que los equipos de la red van a llegar a esta CA. Normalmente
 la IP privada de este servidor. Va dentro del certificado de la propia CA.
 EOF
-  local ip dominio puerto dias
+  local ip zona sub dominio puerto dias
   ip="$(pregunta "IP de la CA" "$(ip_principal)")"
 
-  titulo "2/4  Dominio interno (opcional)"
+  titulo "2/4  Dominio (opcional)"
   cat <<EOF
-Si quiere entrar a sus equipos por NOMBRE (https://nas.int.ejemplo.com) y no
-solo por IP, indique un SUBDOMINIO de un dominio suyo dedicado a lo interno:
-  int.ejemplo.com,  lan.ejemplo.com, ...
-  • La CA quedará en ca.<dominio> y podrá firmar <equipo>.<dominio>.
-  • Cubre un solo nivel: nas.int.ejemplo.com sí, a.nas.int.ejemplo.com no.
-  • Evite .local (choca con mDNS) y dominios inventados (.lan, .corp).
-  • Después habrá que crear los registros DNS; se lo explico al final.
-Déjelo vacío para usar solo IPs.
+Si quiere entrar a sus equipos por NOMBRE (https://nas.int.midominio.com) y
+no solo por IP, indique su dominio propio: el que administra en Cloudflare,
+cPanel, DirectAdmin u otro panel. Ejemplo: midominio.com
+
+Si no tiene dominio o solo va a usar IPs, pulse Enter.
 EOF
-  dominio="$(pregunta "Dominio interno (Enter = sin dominio)" "")"
-  dominio="${dominio#\*.}"; dominio="${dominio#ca.}"; dominio="${dominio%.}"
+  zona="$(pregunta "Dominio (Enter = sin dominio, solo IPs)" "")"
+  zona="${zona,,}"; zona="${zona// /}"; zona="${zona#\*.}"; zona="${zona%.}"
+  dominio=""
+  if [[ -n "$zona" ]]; then
+    [[ "$zona" == *.* ]] || { error "Dominio no válido: $zona (ejemplo: midominio.com)"; exit 1; }
+    cat <<EOF
+
+Sus equipos internos usarán un SUBDOMINIO aparte, para no mezclarlos con su
+web y su correo: así la CA solo puede firmar nombres internos y nunca los de
+su sitio público. Lo habitual es "int".
+EOF
+    sub="$(pregunta "Subdominio" int)"
+    sub="${sub,,}"; sub="${sub// /}"; sub="${sub%.}"; sub="${sub%."$zona"}"
+    [[ -n "$sub" && "$sub" != "$zona" ]] || sub=int
+    dominio="$sub.$zona"
+    cat <<EOF
+
+  Así quedarán los nombres:
+    CA ............ ca.$dominio
+    Sus equipos ... nas.$dominio, router.$dominio, ...
+    En el panel de $zona creará registros A con nombre: ca.$sub, nas.$sub, ...
+EOF
+  fi
 
   titulo "3/4  Puerto"
   echo "Puerto HTTPS en el que escuchará la CA. 443 salvo que ya esté ocupado."
@@ -541,7 +563,8 @@ EOF
   titulo "Resumen"
   cat <<EOF
   IP de la CA ........ $ip
-  Dominio interno .... ${dominio:-(ninguno: solo IPs)}
+  Dominio ............ ${zona:-(ninguno: solo IPs)}
+  Dominio interno .... ${dominio:-(ninguno)}
   Nombre de la CA .... ${dominio:+ca.$dominio}
   Puerto ............. $puerto
   Duración ........... $dias días
@@ -555,6 +578,11 @@ EOF
   CA_RESUMEN=0 CA_DNS="$ip" CA_PUERTO="$puerto" CA_DURACION="$((dias * 24))h" \
     bash "$(ruta install.sh)" "$dominio" || { error "La instalación falló. Detalle: /root/step-ca-install.log"; exit 1; }
   ok "CA instalada y respondiendo."
+  # El dominio principal no está en ca.json; se guarda para el menú posterior.
+  if [[ -n "$zona" ]]; then
+    printf 'ZONA=%s\n' "$zona" > "$CONF"
+    chmod 600 "$CONF"
+  fi
 
   leer_ca
   paso_respaldo

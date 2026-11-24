@@ -22,8 +22,16 @@ curl -fsSLO https://raw.githubusercontent.com/mtandazo35/step-ca-installer/main/
 bash setup.sh
 ```
 
-`setup.sh` explica cada paso antes de hacerlo y pide cuatro datos, con valores por defecto: IP de la
-CA, dominio interno opcional, puerto y días de validez. Después instala y acompaña lo que queda:
+`setup.sh` explica cada paso antes de hacerlo y pide cuatro datos, con valores por defecto:
+
+- IP de la CA;
+- **dominio**, opcional: primero tu dominio (`midominio.com`) y después el subdominio para lo
+  interno (por defecto `int`). Se arma `int.midominio.com`. Antes de instalar muestra cómo quedarán
+  los nombres y qué escribir en el panel;
+- puerto;
+- días de validez.
+
+Después instala y acompaña lo que queda:
 
 1. **Respaldo y clave raíz:** qué es cada clave y cómo sacar el respaldo del servidor. Ofrece
    borrar la raíz cuando confirmas que ya la copiaste.
