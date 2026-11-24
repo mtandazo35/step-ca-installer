@@ -217,6 +217,9 @@ if [[ -n "$CA_DOMINIO" ]]; then
       <equipo>.$CA_DOMINIO  A   <IP privada del equipo>"
 fi
 
+# setup.sh pone CA_RESUMEN=0 porque explica todo esto paso a paso.
+[[ "${CA_RESUMEN:-1}" == 1 ]] || exit 0
+
 cat <<EOF
 
 =====================================================================

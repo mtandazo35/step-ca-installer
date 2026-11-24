@@ -12,9 +12,37 @@ La CA emite de dos formas:
 
 Los clientes confían en los certificados en cuanto se instala la raíz (`root_ca.crt`).
 
-## Instalación
+## Instalación guiada (recomendada)
 
 Como root, en `/root`:
+
+```bash
+cd /root
+curl -fsSLO https://raw.githubusercontent.com/mtandazo35/step-ca-installer/main/setup.sh
+bash setup.sh
+```
+
+`setup.sh` explica cada paso antes de hacerlo y pide cuatro datos, con valores por defecto: IP de la
+CA, dominio interno opcional, puerto y días de validez. Después instala y acompaña lo que queda:
+
+1. **Respaldo y clave raíz:** qué es cada clave y cómo sacar el respaldo del servidor. Ofrece
+   borrar la raíz cuando confirmas que ya la copiaste.
+2. **Firewall:** qué abrir y a quién, con los comandos de UFW si está activo. No toca nada.
+3. **Registros DNS** (si hay dominio):
+   - detecta la zona y sus NS, y propone el panel: Cloudflare, cPanel, DirectAdmin, Unbound,
+     AdGuard/Pi-hole, MikroTik u otro;
+   - muestra los pasos de ese panel con los valores reales;
+   - **comprueba** que el registro resuelve en el DNS público y en el interno;
+   - si el interno lo bloquea por protección contra DNS rebinding, explica cómo exceptuar el dominio.
+4. **Equipos:** cómo instalar la raíz en Linux, Windows, Firefox y Android, con la URL y la huella
+   reales.
+5. **Primer certificado:** lo emite a mano en `/root/certificados/<nombre>/`, o explica cómo pedirlo
+   por ACME desde el equipo.
+
+Con la CA ya instalada, `bash setup.sh` abre un **menú** con esas mismas tareas: emitir otro
+certificado, repasar DNS, equipos, respaldo o firewall, y actualizar.
+
+## Instalación directa (sin preguntas)
 
 ```bash
 cd /root
